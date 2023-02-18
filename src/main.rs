@@ -60,6 +60,27 @@ impl HtmlTemplate {
     }
 }
 
+struct HtmlFile {
+    path: PathBuf,
+}
+
+impl HtmlFile {
+    fn new(path: PathBuf) -> Self {
+        HtmlFile { path }
+    }
+
+    fn write(&self, html: &str) -> Result<(), MarkdownError> {
+        let mut file = File::create(&self.path)?;
+        write!(file, "{}", html)?;
+        Ok(())
+    }
+
+    fn remove(&self) -> Result<(), MarkdownError> {
+        fs::remove_file(&self.path)?;
+        Ok(())
+    }
+}
+
 struct Preview {
     path: PathBuf,
 }
@@ -69,13 +90,16 @@ impl Preview {
         Preview { path }
     }
 
-    fn open(&self) -> io::Result<()> {
+    fn open(&self) -> Result<(), MarkdownError> {
         let command = if cfg!(windows) {
             "cmd"
         } else if cfg!(unix) || cfg!(macos) {
             "open"
         } else {
-            return Err(io::Error::new(io::ErrorKind::Other, "Unsupported platform"));
+            return Err(MarkdownError::IOError(io::Error::new(
+                io::ErrorKind::Other,
+                "Unsupported platform",
+            )));
         };
 
         process::Command::new(command)
@@ -87,12 +111,6 @@ impl Preview {
     }
 }
 
-fn write_html_to_file(html: &str, path: &Path) -> Result<(), MarkdownError> {
-    let mut file = File::create(path)?;
-    write!(file, "{}", html)?;
-    Ok(())
-}
-
 fn run(args: Cli) -> Result<(), MarkdownError> {
     let input = fs::read_to_string(&args.input)?;
     let parser = MarkdownParser::new(input);
@@ -101,13 +119,14 @@ fn run(args: Cli) -> Result<(), MarkdownError> {
     let html = template.generate();
 
     let path = Path::new("preview.html");
-    write_html_to_file(&html, path)?;
+    let html_file = HtmlFile::new(path.to_path_buf());
+    html_file.write(&html)?;
 
     let preview = Preview::new(path.to_path_buf());
 
     preview.open()?;
     thread::sleep(Duration::from_secs(1));
-    fs::remove_file(path)?;
+    html_file.remove()?;
     Ok(())
 }
 
