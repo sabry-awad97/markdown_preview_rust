@@ -1,11 +1,12 @@
 use pulldown_cmark::{html, Options, Parser};
 use std::{
-    fs::{self, File},
+    fs,
     io::Write,
     path::PathBuf,
     process::{Command, Stdio},
 };
 use structopt::StructOpt;
+use tempfile::NamedTempFile;
 
 #[derive(StructOpt)]
 struct Cli {
@@ -28,13 +29,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         body = &html_output
     );
 
-    let mut file = File::create("preview.html")?;
+    let mut file = NamedTempFile::new()?;
+    let path = file.path().with_extension("html");
     write!(file, "{}", template)?;
 
     Command::new("cmd")
-        .args(&["/C", "start", "preview.html"])
+        .args(&["/C", "start", path.to_str().unwrap()])
         .stdout(Stdio::null())
         .spawn()?;
 
+    file.close()?;
+    fs::remove_file(path)?;
     Ok(())
 }
