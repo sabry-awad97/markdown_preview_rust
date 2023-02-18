@@ -89,26 +89,30 @@ impl Preview {
 }
 
 struct MarkdownPreview {
-    markdown: Markdown,
+    markdowns: Vec<Markdown>,
     html_file: HtmlFile,
     preview: Preview,
 }
 
 impl MarkdownPreview {
-    fn new(input: String) -> Result<Self, MarkdownError> {
-        let markdown = Markdown::new(input);
+    fn new(inputs: Vec<String>) -> Result<Self, MarkdownError> {
+        let markdowns = inputs.into_iter().map(Markdown::new).collect();
         let path = Path::new("preview.html");
         let html_file = HtmlFile::new(path.to_path_buf());
         let preview = Preview::new(path.to_path_buf());
         Ok(MarkdownPreview {
-            markdown,
+            markdowns,
             html_file,
             preview,
         })
     }
 
     fn run(&self) -> Result<(), MarkdownError> {
-        let html_output = self.markdown.to_html();
+        let html_output = self
+            .markdowns
+            .iter()
+            .map(|m| m.to_html())
+            .collect::<String>();
         self.html_file.write(&html_output)?;
         self.preview.open()?;
         thread::sleep(Duration::from_secs(1));
@@ -120,13 +124,17 @@ impl MarkdownPreview {
 #[derive(StructOpt)]
 struct Cli {
     #[structopt(parse(from_os_str))]
-    input: PathBuf,
+    inputs: Vec<PathBuf>,
 }
 
 fn main() {
     let args = Cli::from_args();
-    let input = fs::read_to_string(&args.input).expect("Failed to read input file");
-    let preview = MarkdownPreview::new(input).expect("Failed to initialize Markdown preview");
+    let inputs = args
+        .inputs
+        .into_iter()
+        .map(|p| fs::read_to_string(&p).unwrap())
+        .collect();
+    let preview = MarkdownPreview::new(inputs).expect("Failed to initialize Markdown preview");
     if let Err(e) = preview.run() {
         eprintln!("Error: {:?}", e);
         std::process::exit(1);
