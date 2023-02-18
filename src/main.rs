@@ -9,12 +9,6 @@ use std::{
 };
 use structopt::StructOpt;
 
-#[derive(StructOpt)]
-struct Cli {
-    #[structopt(parse(from_os_str))]
-    input: PathBuf,
-}
-
 #[derive(Debug)]
 enum MarkdownError {
     IOError(io::Error),
@@ -26,37 +20,20 @@ impl From<io::Error> for MarkdownError {
     }
 }
 
-struct MarkdownParser {
+struct Markdown {
     input: String,
 }
 
-impl MarkdownParser {
+impl Markdown {
     fn new(input: String) -> Self {
-        MarkdownParser { input }
+        Markdown { input }
     }
 
-    fn parse(&self) -> Result<String, MarkdownError> {
+    fn to_html(&self) -> String {
         let parser = Parser::new_ext(&self.input, Options::all());
         let mut html_output = String::new();
         html::push_html(&mut html_output, parser);
-        Ok(html_output)
-    }
-}
-
-struct HtmlTemplate {
-    body: String,
-}
-
-impl HtmlTemplate {
-    fn new(body: String) -> Self {
-        HtmlTemplate { body }
-    }
-
-    fn generate(&self) -> String {
-        format!(
-            r#"<html><head><title>"Markdown Preview"</title></head><body>{body}</body></html>"#,
-            body = &self.body
-        )
+        html_output
     }
 }
 
@@ -111,31 +88,46 @@ impl Preview {
     }
 }
 
-fn run(args: Cli) -> Result<(), MarkdownError> {
-    let input = fs::read_to_string(&args.input)?;
-    let parser = MarkdownParser::new(input);
-    let html_output = parser.parse()?;
-    let template = HtmlTemplate::new(html_output);
-    let html = template.generate();
-
-    let path = Path::new("preview.html");
-    let html_file = HtmlFile::new(path.to_path_buf());
-    html_file.write(&html)?;
-
-    let preview = Preview::new(path.to_path_buf());
-
-    preview.open()?;
-    thread::sleep(Duration::from_secs(1));
-    html_file.remove()?;
-    Ok(())
+struct MarkdownPreview {
+    markdown: Markdown,
+    html_file: HtmlFile,
+    preview: Preview,
 }
 
-fn get_args() -> Result<Cli, MarkdownError> {
-    Ok(Cli::from_args())
+impl MarkdownPreview {
+    fn new(input: String) -> Result<Self, MarkdownError> {
+        let markdown = Markdown::new(input);
+        let path = Path::new("preview.html");
+        let html_file = HtmlFile::new(path.to_path_buf());
+        let preview = Preview::new(path.to_path_buf());
+        Ok(MarkdownPreview {
+            markdown,
+            html_file,
+            preview,
+        })
+    }
+
+    fn run(&self) -> Result<(), MarkdownError> {
+        let html_output = self.markdown.to_html();
+        self.html_file.write(&html_output)?;
+        self.preview.open()?;
+        thread::sleep(Duration::from_secs(1));
+        self.html_file.remove()?;
+        Ok(())
+    }
+}
+
+#[derive(StructOpt)]
+struct Cli {
+    #[structopt(parse(from_os_str))]
+    input: PathBuf,
 }
 
 fn main() {
-    if let Err(e) = get_args().and_then(run) {
+    let args = Cli::from_args();
+    let input = fs::read_to_string(&args.input).expect("Failed to read input file");
+    let preview = MarkdownPreview::new(input).expect("Failed to initialize Markdown preview");
+    if let Err(e) = preview.run() {
         eprintln!("Error: {:?}", e);
         std::process::exit(1);
     }
